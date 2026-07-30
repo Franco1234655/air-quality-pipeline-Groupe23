@@ -1,0 +1,22 @@
+# Environnements Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Variables secrètes
+.env
+
+# Fichiers locaux
+*.log
+
+# Données générées localement
+storage/raw/
+storage/processed/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Configuration IDE
+.vscode/
+.idea/
