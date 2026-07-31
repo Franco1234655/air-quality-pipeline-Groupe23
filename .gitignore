@@ -12,7 +12,7 @@ __pycache__/
 
 # Données générées localement
 storage/raw/
-storage/processed/
+storage/clean/
 
 # Jupyter
 .ipynb_checkpoints/

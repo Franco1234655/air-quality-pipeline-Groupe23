@@ -68,7 +68,7 @@ avec Python
         │
         ▼
 Données préparées CSV
-storage/processed/
+storage/clean/
         │
         ▼
 Chargement avec Python
@@ -101,7 +101,7 @@ PROJET-DONNEES2/
 │
 ├── storage/
 │   ├── raw/
-│   └── processed/
+│   └── clean/
 │
 ├── warehouse/
 │   ├── schema.sql
@@ -250,7 +250,7 @@ python transformation/clean_historical.py
 
 Le fichier CSV est créé dans :
 
-storage/processed/
+storage/clean/
 3. Création du schéma PostgreSQL
 psql -h localhost -U air_quality_user -d air_quality -f warehouse/schema.sql
 4. Chargement dans PostgreSQL

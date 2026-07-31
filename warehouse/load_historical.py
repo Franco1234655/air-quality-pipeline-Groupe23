@@ -18,7 +18,7 @@ load_dotenv()
 # ==========================================
 
 PROCESSED_DIRECTORY = Path(
-    "storage/processed"
+    "storage/clean"
 )
 
 
@@ -44,7 +44,7 @@ def get_latest_historical_csv():
 
             "Aucun fichier CSV historique "
 
-            "trouvé dans storage/processed/"
+            "trouvé dans storage/clean/"
 
         )
 

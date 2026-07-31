@@ -5,7 +5,7 @@ import pandas as pd
 
 
 RAW_DIRECTORY = Path("storage/raw")
-PROCESSED_DIRECTORY = Path("storage/processed")
+PROCESSED_DIRECTORY = Path("storage/clean")
 
 
 def get_air_quality_level(aqi):

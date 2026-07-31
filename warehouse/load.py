@@ -6,64 +6,42 @@ import psycopg2
 from dotenv import load_dotenv
 
 
-# ==========================================
-# CHARGEMENT DES VARIABLES D'ENVIRONNEMENT
-# ==========================================
-
+# Charger les variables du fichier .env
 load_dotenv()
 
 
-# ==========================================
-# DOSSIER DES DONNÉES TRAITÉES
-# ==========================================
+# Dossier contenant les fichiers CSV nettoyés
+CLEAN_DIRECTORY = Path("storage/clean")
 
-PROCESSED_DIRECTORY = Path(
-    "storage/processed"
-)
-
-
-# ==========================================
-# RÉCUPÉRER LE FICHIER CSV LE PLUS RÉCENT
-# ==========================================
 
 def get_latest_csv():
     """
-    Retourne le fichier CSV OpenWeatherMap
-    nettoyé le plus récent.
+    Retourne le fichier CSV actuel OpenWeatherMap
+    le plus récent.
+
+    Les fichiers historiques sont volontairement
+    exclus du pipeline automatique.
     """
 
     csv_files = sorted(
-    list(
-        PROCESSED_DIRECTORY.glob(
+        CLEAN_DIRECTORY.glob(
             "openweather_air_quality_clean_*.csv"
         )
     )
-    +
-    list(
-        PROCESSED_DIRECTORY.glob(
-            "openweather_historical_clean_*.csv"
-        )
-    )
-)
 
     if not csv_files:
 
         raise FileNotFoundError(
-            "❌ Aucun fichier CSV OpenWeatherMap "
-            "trouvé dans storage/processed/"
+            "Aucun fichier CSV actuel OpenWeatherMap "
+            "trouvé dans storage/clean/"
         )
 
     return csv_files[-1]
 
 
-# ==========================================
-# CONNEXION À POSTGRESQL
-# ==========================================
-
 def get_database_connection():
     """
-    Crée et retourne une connexion
-    à la base de données PostgreSQL.
+    Crée et retourne une connexion PostgreSQL.
     """
 
     return psycopg2.connect(
@@ -94,25 +72,13 @@ def get_database_connection():
     )
 
 
-# ==========================================
-# CRÉER L'IDENTIFIANT DE LA DATE
-# ==========================================
-
 def create_date_id(date_value):
     """
-    Transforme une date au format :
-
-    YYYY-MM-DD
-
-    en identifiant :
-
-    YYYYMMDD
+    Transforme une date en identifiant au format :
+    YYYYMMDD.
 
     Exemple :
-
-    2026-07-30
-    devient
-    20260730
+    2026-07-31 devient 20260731.
     """
 
     return int(
@@ -122,164 +88,48 @@ def create_date_id(date_value):
     )
 
 
-# ==========================================
-# CHARGEMENT DES DONNÉES
-# ==========================================
-
 def load_air_quality_data():
+    """
+    Charge les données actuelles OpenWeatherMap
+    nettoyées dans PostgreSQL.
+    """
 
-    # --------------------------------------
-    # Récupération du fichier CSV
-    # --------------------------------------
-
-    csv_file = (
-        get_latest_csv()
-    )
+    csv_file = get_latest_csv()
 
     print(
         f"📥 Lecture du fichier : "
         f"{csv_file}"
     )
 
-
-    # --------------------------------------
-    # Lecture du fichier CSV
-    # --------------------------------------
-
+    # Lire le fichier CSV
     df = pd.read_csv(
         csv_file
     )
 
-
-    # --------------------------------------
-    # Vérification des colonnes obligatoires
-    # --------------------------------------
-
-    required_columns = [
-
-        "city",
-
-        "country",
-
-        "latitude",
-
-        "longitude",
-
-        "measurement_time",
-
-        "openweather_aqi",
-
-        "pm2_5",
-
-        "pm10",
-
-        "carbon_monoxide",
-
-        "nitrogen_dioxide",
-
-        "sulphur_dioxide",
-
-        "ozone",
-
-        "ammonia",
-
-        "air_quality_level",
-
-        "extracted_at"
-
-    ]
-
-    missing_columns = [
-
-        column
-
-        for column in required_columns
-
-        if column not in df.columns
-
-    ]
-
-    if missing_columns:
-
-        raise ValueError(
-
-            "❌ Colonnes manquantes dans "
-            "le fichier CSV : "
-
-            + ", ".join(
-                missing_columns
-            )
-
-        )
-
-
-    # --------------------------------------
-    # Conversion des dates
-    # --------------------------------------
-
-    df["measurement_time"] = (
-
-        pd.to_datetime(
-
-            df["measurement_time"],
-
-            errors="coerce",
-
-            utc=True
-
-        )
-
-    )
-
-
-    df["extracted_at"] = (
-
-        pd.to_datetime(
-
-            df["extracted_at"],
-
-            errors="coerce",
-
-            utc=True
-
-        )
-
-    )
-
-
-    # --------------------------------------
-    # Supprimer les lignes avec une date
-    # invalide
-    # --------------------------------------
-
-    invalid_dates = (
-
-        df["measurement_time"].isna()
-
-        |
-
-        df["extracted_at"].isna()
-
-    )
-
-    if invalid_dates.any():
+    if df.empty:
 
         print(
-
-            "⚠️ Certaines lignes ont "
-            "des dates invalides."
-
+            "⚠️ Le fichier CSV est vide."
         )
 
-        df = df.loc[
-            ~invalid_dates
-        ].copy()
+        return
 
+    # Convertir les colonnes de date
+    df["measurement_time"] = (
+        pd.to_datetime(
+            df["measurement_time"],
+            utc=True
+        )
+    )
 
-    # --------------------------------------
+    df["extracted_at"] = (
+        pd.to_datetime(
+            df["extracted_at"],
+            utc=True
+        )
+    )
+
     # Connexion PostgreSQL
-    # --------------------------------------
-
     connection = (
         get_database_connection()
     )
@@ -288,29 +138,18 @@ def load_air_quality_data():
         connection.cursor()
     )
 
-
-    # Compteurs
-
-    inserted_count = 0
-
-    duplicate_count = 0
-
+    inserted_measurements = 0
+    existing_measurements = 0
 
     try:
 
-        # ----------------------------------
-        # Parcours des données
-        # ----------------------------------
-
         for _, row in df.iterrows():
-
 
             # ==================================
             # DIMENSION VILLE
             # ==================================
 
             cursor.execute(
-
                 """
                 INSERT INTO dim_city (
 
@@ -361,19 +200,19 @@ def load_air_quality_data():
 
                     row["country"],
 
-                    row["latitude"],
+                    float(
+                        row["latitude"]
+                    ),
 
-                    row["longitude"]
+                    float(
+                        row["longitude"]
+                    )
 
                 )
-
             )
 
-
             city_id = (
-
                 cursor.fetchone()[0]
-
             )
 
 
@@ -381,43 +220,30 @@ def load_air_quality_data():
             # DIMENSION DATE
             # ==================================
 
-            measurement_date = (
-
+            measurement_time = (
                 row[
                     "measurement_time"
-                ].date()
-
+                ]
             )
 
+            measurement_date = (
+                measurement_time.date()
+            )
 
             date_id = (
-
                 create_date_id(
-
-                    row[
-                        "measurement_time"
-                    ]
-
+                    measurement_time
                 )
-
             )
 
-
             quarter = (
-
                 (
-
                     measurement_date.month
-
                     - 1
-
                 ) // 3
-
             ) + 1
 
-
             cursor.execute(
-
                 """
                 INSERT INTO dim_date (
 
@@ -475,7 +301,6 @@ def load_air_quality_data():
                     quarter
 
                 )
-
             )
 
 
@@ -484,7 +309,6 @@ def load_air_quality_data():
             # ==================================
 
             cursor.execute(
-
                 """
                 INSERT INTO fact_air_quality (
 
@@ -565,37 +389,55 @@ def load_air_quality_data():
 
                     date_id,
 
-                    row[
-                        "measurement_time"
-                    ].to_pydatetime(),
+                    measurement_time.to_pydatetime(),
 
                     int(
-
                         row[
                             "openweather_aqi"
                         ]
-
                     ),
 
-                    row["pm2_5"],
+                    float(
+                        row[
+                            "pm2_5"
+                        ]
+                    ),
 
-                    row["pm10"],
+                    float(
+                        row[
+                            "pm10"
+                        ]
+                    ),
 
-                    row[
-                        "carbon_monoxide"
-                    ],
+                    float(
+                        row[
+                            "carbon_monoxide"
+                        ]
+                    ),
 
-                    row[
-                        "nitrogen_dioxide"
-                    ],
+                    float(
+                        row[
+                            "nitrogen_dioxide"
+                        ]
+                    ),
 
-                    row[
-                        "sulphur_dioxide"
-                    ],
+                    float(
+                        row[
+                            "sulphur_dioxide"
+                        ]
+                    ),
 
-                    row["ozone"],
+                    float(
+                        row[
+                            "ozone"
+                        ]
+                    ),
 
-                    row["ammonia"],
+                    float(
+                        row[
+                            "ammonia"
+                        ]
+                    ),
 
                     row[
                         "air_quality_level"
@@ -606,14 +448,7 @@ def load_air_quality_data():
                     ].to_pydatetime()
 
                 )
-
             )
-
-
-            # ----------------------------------
-            # Vérifier si la mesure a été
-            # insérée ou ignorée
-            # ----------------------------------
 
             result = (
                 cursor.fetchone()
@@ -621,25 +456,18 @@ def load_air_quality_data():
 
             if result is None:
 
-                duplicate_count += 1
+                existing_measurements += 1
 
             else:
 
-                inserted_count += 1
+                inserted_measurements += 1
 
 
-        # --------------------------------------
         # Enregistrer les modifications
-        # --------------------------------------
-
         connection.commit()
 
-
-        print()
-
         print(
-            "✅ Chargement PostgreSQL "
-            "terminé"
+            "\n✅ Chargement PostgreSQL terminé"
         )
 
         print(
@@ -648,56 +476,39 @@ def load_air_quality_data():
         )
 
         print(
-            f"➕ Nouvelles mesures "
-            f"insérées : "
-            f"{inserted_count}"
+            f"➕ Nouvelles mesures insérées : "
+            f"{inserted_measurements}"
         )
 
         print(
             f"⏭️ Mesures déjà présentes : "
-            f"{duplicate_count}"
+            f"{existing_measurements}"
         )
 
 
     except Exception as error:
 
-        # Annuler toutes les opérations
-        # en cas d'erreur
-
+        # Annuler les modifications
         connection.rollback()
 
-
         print(
-
-            f"❌ Erreur lors du "
-            f"chargement : {error}"
-
+            f"\n❌ Erreur lors du chargement : "
+            f"{error}"
         )
-
 
         raise
 
 
     finally:
 
-        # --------------------------------------
-        # Fermer la connexion
-        # --------------------------------------
-
         cursor.close()
 
         connection.close()
 
-
         print(
-            "🔌 Connexion PostgreSQL "
-            "fermée"
+            "🔌 Connexion PostgreSQL fermée"
         )
 
-
-# ==========================================
-# LANCEMENT DU SCRIPT
-# ==========================================
 
 if __name__ == "__main__":
 

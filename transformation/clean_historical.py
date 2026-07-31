@@ -13,7 +13,7 @@ RAW_DIRECTORY = Path(
 )
 
 PROCESSED_DIRECTORY = Path(
-    "storage/processed"
+    "storage/clean"
 )
 
 
